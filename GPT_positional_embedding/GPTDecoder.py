@@ -22,27 +22,38 @@ class GPTDecoder():
     def get_probs(self, logits):
         return self.softmax(logits)
 
+    def get_token_probs(self, input_ids, probs):
+        output_prob = []
+        # probs only of sequences
+        # batch가 없다면
+        for b in range(len(input_ids)):
+            seq_prob = []
+            for i in range(self.maxlen):
+                # consider mask!!!
+                tok_prob = probs[b, i, input_ids[b, :]]  # (1, H)
+                seq_prob.append(tok_prob)  # (i, H)
+            output_prob.append(seq_prob)  # ( b, P', P')
+
+        return torch.tensor(output_prob)
+
     def __call__(self, input_ids):  # (B, P)
         last_hidden_state = self.get_decoder_output(input_ids)  # (B, P', H)
         logits = self.get_logits(last_hidden_state)  # (B, P', len(vocab))
         probs = self.get_probs(logits)  # (B, P', len(vocab))
 
-        output_prob = []
-        # probs only of sequences
-        for b in range(len(input_ids)):
-            seq_prob = []
-            for i in range(self.maxlen):
-                # consider mask!!!
-                tok_prob = probs[b, i, input_ids[b, :]]
-                seq_prob.append(tok_prob)
-            output_prob.append(seq_prob)
+        output_prob = self.get_token_probs(input_ids, probs) # (B, P', P')
 
-        # for i in range(self.maxlen):
-        #     # consider mask!!!
-        #     tok_prob = probs[:, i, input_ids[:,:]]  # (1, B, MAXLEN)
-        #     output_prob.append(tok_prob)  # (i, B, 1, MAXLEN)
-        # # output_prob # (MAXLEN, B, 1, MAXLEN)
-        # # want # ( B, MAXLEN, MAXLEN)
-        # output_prob.reshape((len(input_ids), self.maxlen, self.maxlen))
+        return output_prob
+
+    def to_words_probs(self, tokenizer, input_ids, probs):
+        # without batch
+
+        # convert id to token
+        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+
+        # convert token to word
+        for i in range(len(tokens)):
+            if '#' in tokens[i]:
 
 
+        tokenzier.convert_ids_to_words() = ## code 참고

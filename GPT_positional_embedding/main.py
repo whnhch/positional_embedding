@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 
 from GPTDecoder import GPTDecoder
-from train import train
-from data import get_data
+from Train import train
+from Data import get_data
+
+import random
 
 label_list = ['org:member_of', 'per:schools_attended', 'per:charges', 'org:city_of_headquarters',
               'org:country_of_headquarters', 'org:subsidiaries', 'per:employee_of', 'per:stateorprovince_of_death',
@@ -24,17 +26,18 @@ def main():
     #     "--mode", default=None, choices=["train", "valid", "eval", "finetune", "analysis", "feature_extraction"])
 
     parser.add_argument("--output_dir", type=str, default="dataset/models")
-    parser.add_argument("--pretrained_model_name", type=str, default='gpt-medium')
+    parser.add_argument("--gpt2_version", type=str, default='gpt2-medium')
     parser.add_argument("--max_seq_length", type=int, default=450)
     parser.add_argument("--batch_size", type=int, default=3)
     parser.add_argument("--do_preprocessing", type=bool, default=True)
     parser.add_argument("--train_file", type=str, default="train.json")
     parser.add_argument("--dev_file", type=str, default="dev.json")
     parser.add_argument("--test_file", type=str, default="test.json")
+
     args = parser.parse_args()
 
     output_dir = args.output_dir
-    pretrained_model_name = args.pretrained_model_name
+    gpt2_version = args.gpt2_version
     max_len = args.max_seq_length
     batch_size = args.batch_size
     do_preprocessing = args.do_preprocessing
@@ -66,11 +69,27 @@ def main():
     test_masked_sentences = np.array(test_df.masked_sentence.values)
     test_labels = np.array([label_list.index(label) for label in test_df.label.values])
 
+    seed_val = 42
+
+    random.seed(seed_val)
+    np.random.seed(seed_val)
+    torch.manual_seed(seed_val)
+    torch.cuda.manual_seed_all(seed_val)
+
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        print('There are %d GPU(s) available.' % torch.cuda.device_count())
+        print('We will use the GPU:', torch.cuda.get_device_name(0))
+
+    else:
+        print('No GPU avbailable, using the CPU instead')
+        device = torch.device('cpu')
+
     train(train_sentences, train_masked_sentences, train_labels,
           dev_sentences, dev_masked_sentences, dev_labels,
-          pretrained_model_name, max_len)
+          gpt2_version, max_len)
 
     # GDPDecoder Result
-    decoder = GPTDecoder.GPTDecoder(pretrained_model_name, max_len)
+    decoder = GPTDecoder.GPTDecoder(gpt2_version, max_len)
     decoder()
     train_sentences
