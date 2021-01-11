@@ -2,7 +2,7 @@ from transformers import BertModel, AdamW, BertConfig
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
+import numpy as np
 
 class BERTBiLSTM(nn.Module):
     def __init__(self, tokenizer, max_length=512, num_labels=42, embedding_dim=20, num_recurrent_layers=1,
@@ -41,6 +41,12 @@ class BERTBiLSTM(nn.Module):
 
         self.mlp = nn.Linear(in_features=self.lstm_hidden_size * 2, out_features=mlp_hidden_size)
         self.classifier = nn.Linear(in_features=mlp_hidden_size, out_features=self.num_labels)
+
+    def get_positional_embedding(self, max_len, hidden_dimension=768):
+        embedding_matrix = []
+        for i in range(max_len):
+            embedding_matrix.append([i+1]*hidden_dimension)
+        return embedding_matrix
 
     def forward(self, device, input_ids, attention_mask, positional_ids, seq_lengths, sequence_length, labels=None,
                 token_type_ids=None, tags=None):
