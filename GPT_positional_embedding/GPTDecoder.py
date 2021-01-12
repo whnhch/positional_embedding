@@ -41,19 +41,45 @@ class GPTDecoder():
         logits = self.get_logits(last_hidden_state)  # (B, P', len(vocab))
         probs = self.get_probs(logits)  # (B, P', len(vocab))
 
-        output_prob = self.get_token_probs(input_ids, probs) # (B, P', P')
+        output_prob = self.get_token_probs(input_ids, probs)  # (B, P', P')
 
         return output_prob
 
-    def to_words_probs(self, tokenizer, input_ids, probs):
+    def get_words_probs(self, tokenizer, input_ids, probs):
         # without batch
 
         # convert id to token
         tokens = tokenizer.convert_ids_to_tokens(input_ids)
 
+        words = []
+        words_probs = []
         # convert token to word
-        for i in range(len(tokens)):
+        i = 0
+        while i < len(tokens):
             if '#' in tokens[i]:
+                wrecked_tokens = [tokens[i]]
+                wrecked_probs = [probs[i]]
+                for j in range(i + 1, len(tokens)):
+                    if '#' in tokens[j]:
+                        wrecked_tokens.append(tokens[j])
+                        wrecked_probs.append(probs[j])
+                    else:
+                        wrecked_tokens.append(tokens[j])
+                        wrecked_probs.append(probs[j])
 
+                        word = tokenizer.convert_tokens_to_string(wrecked_tokens)
+                        words.append(word)
 
-        tokenzier.convert_ids_to_words() = ## code 참고
+                        # Use probability by last word
+                        words_probs.append(wrecked_tokens[-1])
+
+                        # Average
+                        # words_probs.append(sum(wrecked_tokens)/len(wrecked_tokens))
+                        i = j + 1
+                        break
+            else:
+                words.append(tokens[i])
+                words_probs.append(probs[i])
+                i += 1
+
+        return words, words_probs
