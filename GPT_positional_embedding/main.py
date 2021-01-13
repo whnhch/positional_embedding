@@ -1,6 +1,7 @@
 import argparse
 import pandas as pd
 import numpy as np
+import torch
 
 from GPTDecoder import GPTDecoder
 from Train import train
@@ -20,6 +21,7 @@ label_list = ['org:member_of', 'per:schools_attended', 'per:charges', 'org:city_
               'per:title', 'per:city_of_birth'
               ]
 
+
 def main():
     parser = argparse.ArgumentParser()
     # parser.add_argument(
@@ -30,9 +32,9 @@ def main():
     parser.add_argument("--max_seq_length", type=int, default=450)
     parser.add_argument("--batch_size", type=int, default=3)
     parser.add_argument("--do_preprocessing", type=bool, default=True)
-    parser.add_argument("--train_file", type=str, default="train.json")
-    parser.add_argument("--dev_file", type=str, default="dev.json")
-    parser.add_argument("--test_file", type=str, default="test.json")
+    parser.add_argument("--train_file", type=str, default="dataset/json/train.json")
+    parser.add_argument("--dev_file", type=str, default="dataset/json/dev.json")
+    parser.add_argument("--test_file", type=str, default="dataset/json/test.json")
 
     args = parser.parse_args()
 
@@ -46,16 +48,20 @@ def main():
     test_file = args.test_file
 
     if do_preprocessing:
-        train_df = get_data(train_file)
-        dev_df = get_data(dev_file)
-        test_df = get_data(test_file)
-    else:
-        train_df = pd.read_csv(train_file, delimiter='\t', header=None,
-                               names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
-        dev_df = pd.read_csv(dev_file, delimiter='\t', header=None,
-                             names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
-        test_df = pd.read_csv(test_file, delimiter='\t', header=None,
-                              names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
+        get_data(train_file, 'train')
+        get_data(dev_file, 'dev')
+        get_data(test_file, 'test')
+
+        train_file = 'dataset/train_masked.tsv'
+        test_file = 'dataset/test_masked.tsv'
+        dev_file = 'dataset/dev_masked.tsv'
+
+    train_df = pd.read_csv(train_file, delimiter='\t', header=None,
+                           names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
+    dev_df = pd.read_csv(dev_file, delimiter='\t', header=None,
+                         names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
+    test_df = pd.read_csv(test_file, delimiter='\t', header=None,
+                          names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
 
     train_sentences = np.array(train_df.sentence.values)
     train_masked_sentences = np.array(train_df.masked_sentence.values)
@@ -85,11 +91,10 @@ def main():
         print('No GPU avbailable, using the CPU instead')
         device = torch.device('cpu')
 
-    train(train_sentences, train_masked_sentences, train_labels,
+    train(device, train_sentences, train_masked_sentences, train_labels,
           dev_sentences, dev_masked_sentences, dev_labels,
           gpt2_version, max_len)
 
-    # GDPDecoder Result
-    decoder = GPTDecoder.GPTDecoder(gpt2_version, max_len)
-    decoder()
-    train_sentences
+
+if __name__ == '__main__':
+    main()

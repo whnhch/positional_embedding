@@ -1,5 +1,5 @@
 import torch
-from transformers import GPTTokenizer, BERTTokenizer
+from transformers import GPT2Tokenizer, BertTokenizer
 
 object_type_list = ['OBJORGANIZATION',
                     'OBJNATIONALITY',
@@ -23,11 +23,11 @@ type_list = object_type_list + subject_type_list
 
 
 def get_gpt_tokenizer(gpt_model_name):
-    return GPTTokenizer.from_pretrained(gpt_model_name)
+    return GPT2Tokenizer.from_pretrained(gpt_model_name)
 
 
 def get_bert_tokenizer():
-    return BERTTokenizer.from_pretrained('bert-base-cased')
+    return BertTokenizer.from_pretrained('bert-base-cased')
 
 
 # gpt tokenizer와 bert tokenizer의 호환성 문제 해결해야
@@ -40,15 +40,51 @@ def get_gpt_tokens(tokenizer, sentences, pretrained_model_name, max_len):
 
 
 def get_gpt_token_ids(tokenizer, sentences, max_len):
-    outputs = tokenizer.encode_plus(sentences, add_special_tokens=True, max_length=max_len)
-    input_ids = outputs['input_ids']
-    attention_masks = outputs['attention_mask']
-    positional_ids = outputs['positional_ids']
+    input_ids = []
+    for sentence in sentences:
+        outputs = tokenizer.encode_plus(sentence, add_special_tokens=True, pad_to_max_length=True, max_length=max_len,
+                                        return_tensors='pt')
+        input_ids.append(outputs['input_ids'])
 
-    return input_ids, attention_masks, positional_ids
+    input_ids = torch.cat(input_ids, dim=0)
+    # attention_masks = outputs['attention_mask']
+    # positional_ids = outputs['positional_ids']
+
+    return input_ids
 
 
-def get_bert_tokens(tokenizer, sentences, labels, max_len):
+def get_bert_token_probs(tokens, words, word_probs):
+    output = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if '#' in token:
+            tmp_tokens = []
+            tmp_tokens.append(token.replace('#', ''))
+
+            for j in range(i + 1, len(tokens)):
+                token = tokens[j]
+                tmp_tokens.append(token.replace('#', ''))
+                if not '#' in token:
+                    word = ''.join(tmp_tokens)
+                    try:
+                        idx = word_probs.index(word)
+                        for k in range(idx):
+                            output.append(word_probs[idx])
+                    except ValueError:
+                        print('Error at get bert token probabilities! : No matching word in bert tokens.')
+
+                    i = j + 1
+                    break
+
+
+        else:
+            output.append(word_probs[i])
+
+        return output
+
+
+def get_bert_tokens(tokenizer, sentences, labels, words, word_probs, max_len):
     input_ids = []
     attention_masks = []
     positional_ids = []
@@ -67,6 +103,7 @@ def get_bert_tokens(tokenizer, sentences, labels, max_len):
         attention_masks.append(encoded_dict['attention_mask'])
 
         tokens = tokenizer.convert_ids_to_tokens(encoded_dict['input_ids'][0, :])
+        pos_prob = get_bert_token_probs(tokens, words, word_probs)
         positional_id, sequence_length = get_bilstm_positional_ids(max_len, tokens)
         positional_ids.append(positional_id)
         sequence_lengths.append(sequence_length)
@@ -79,7 +116,7 @@ def get_bert_tokens(tokenizer, sentences, labels, max_len):
     positional_ids = torch.tensor(positional_ids)
     sequence_lengths = torch.tensor(sequence_lengths)
 
-    return input_ids, attention_masks, positional_ids, sequence_lengths, labels
+    return input_ids, attention_masks, pos_prob, positional_ids, sequence_lengths, labels
 
 
 def add_type_lists_to_tokenizer(tokenizer):

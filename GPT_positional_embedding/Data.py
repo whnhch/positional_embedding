@@ -1,7 +1,7 @@
-import torch
 import Tokenizer
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 import pandas as pd
+import json
 
 
 def get_data(input_file, file_str):
@@ -37,21 +37,23 @@ def get_data(input_file, file_str):
 
         masked_df = pd.DataFrame(masked_result)
 
-        masked_df.to_csv(file_str + '_masked.tsv', header=False, sep='\t', index=False)
+        masked_df.to_csv('dataset/' + file_str + '_masked.tsv', header=False, sep='\t', index=False)
 
         return masked_df
 
 
-def get_data_loader(tokenizer, sentences, token_probabilities, batch_size, labels, max_len, data_type='train', tokenizer_type='BERT'):
+def get_data_loader(tokenizer, sentences, word_prob, batch_size, labels, max_len, data_type='train',
+                    tokenizer_type='BERT'):
     dataset = None
     sampler = None
 
     if tokenizer_type.upper() == 'BERT':
-        input_ids, attribute_masks, positional_ids, seq_length, gt_labels = Tokenizer.get_bert_tokens(sentences, labels,
-                                                                                                      tokenizer,
+        input_ids, attribute_masks, positional_ids, seq_length, gt_labels = Tokenizer.get_bert_tokens(tokenizer,
+                                                                                                      sentences, labels,
+                                                                                                      word_prob,
                                                                                                       max_len)
 
-        dataset = TensorDataset(input_ids, attribute_masks, positional_ids, token_probabilities, seq_length, gt_labels)
+        dataset = TensorDataset(input_ids, attribute_masks, positional_ids, seq_length, gt_labels)
 
     else:
         input_ids, attribute_masks, positional_ids, seq_length, gt_labels = Tokenizer.get_gpt_tokens(sentences, labels,

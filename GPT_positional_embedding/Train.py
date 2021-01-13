@@ -7,6 +7,7 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 
 import numpy as np
 import pandas as pd
+import torch
 import torch.nn.functional as F
 import time
 import datetime
@@ -32,17 +33,19 @@ def train(device, train_sentences, train_masked_sentences, train_labels,
           pretrained_model_name, max_len):
     # fix max len and padding, should note that still did not implement endoftext
     gpt_tokenizer = Tokenizer.get_gpt_tokenizer(pretrained_model_name)
-    train_gpt_input_ids, train_gpt_attention_masks, train_gpt_positional_ids = Tokenizer.get_gpt_token_ids(
-        gpt_tokenizer, train_sentences, pretrained_model_name, max_len)
+    gpt_tokenizer.pad_token = gpt_tokenizer.eos_token
+    train_gpt_input_ids = Tokenizer.get_gpt_token_ids(
+        gpt_tokenizer, train_sentences, max_len)
 
     decoder = GPTDecoder(pretrained_model_name, max_len)
     tr_token_probabilities = decoder(train_gpt_input_ids)
-
+    tr_words, tr_words_probabilities = decoder.get_words_probs(gpt_tokenizer, train_gpt_input_ids, tr_token_probabilities)
+    print(tr_words_probabilities)
     # tr_token_probabilities 는 gpt의 tokenizer에 따라 tokenizing된 상태이다. 이를 바꾸든지 아니면 같은 tokenizer를 사용해야 한다.
     # token_ids to token?
 
     bert_tokenizer = Tokenizer.get_bert_tokenizer
-    train_dataloader = get_data_loader(bert_tokenizer, train_masked_sentences, train_labels, tr_token_probabilities,
+    train_dataloader = get_data_loader(bert_tokenizer, train_masked_sentences, train_labels, tr_words, tr_token_probabilities,
                                        max_len, data_type='train', tokenizer_type='BERT')
 
     model = BERTBiLSTM(bert_tokenizer, max_length=450)
@@ -182,7 +185,7 @@ def train(device, train_sentences, train_masked_sentences, train_labels,
                                      attention_mask=b_input_mask,
                                      positional_ids=b_input_positional_ids,
                                      seq_lengths=b_input_seq_lengths,
-                                     sequence_length=MAX_LEN,
+                                     sequence_length=max_len,
                                      labels=b_labels,
                                      token_type_ids=None
                                      )
