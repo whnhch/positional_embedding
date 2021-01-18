@@ -6,7 +6,7 @@ def get_positional_embedding(max_len, dim=768):
     pe = torch.Tensor(max_len, dim)
 
     for i in range(max_len):
-        pe[i, :] = (i + 1) / dim
+        pe[i, :] = (i + 1)
 
     return pe
 
@@ -26,7 +26,18 @@ def get_sinusoidal_embedding(max_len, dim=768):
     pe = torch.Tensor(max_len, dim)
 
     pos = torch.arange(0, max_len, 1.).unsqueeze(1)
-    k = torch.exp(-np.log(10000) * torch.arrange(0, dim, 2.) / dim)
+    k = torch.exp(-np.log(10000) * torch.arange(0, dim, 2.) / dim)
+
+    pe[:, 0::2] = torch.sin(pos * k)
+    pe[:, 1::2] = torch.cos(pos * k)
+
+    return pe
+
+def get_sinusoidal_embedding(max_len, dim=768):
+    pe = torch.Tensor(max_len, dim)
+
+    pos = torch.arange(-1., max_len, 1.).unsqueeze(1)
+    k = torch.exp(-np.log(10000) * torch.arange(0, dim, 2.) / dim)
 
     pe[:, 0::2] = torch.sin(pos * k)
     pe[:, 1::2] = torch.cos(pos * k)
