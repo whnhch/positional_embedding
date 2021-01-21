@@ -175,38 +175,13 @@ def get_gpt_token_ids(tokenizer, sentences, max_len):
     return input_ids, attention_masks
 
 
-"""## **2. Data Preprocessing**
-
-### **Tokenizer**
-
-The sentences in our dataset obviously have varying lengths, so how does BERT handle this?
-
-The tokenizer.encode_plus function combines multiple steps for us:
-
-
-1.   Split the sentence into tokens.
-2.   Add the special [CLS] and [SEP] tokens.
-3.   Map the tokens to their IDs.
-4.   Pad or truncate all sentences to the same length.
-5.   Create the attention masks which explicitly differentiate real tokens from [PAD] tokens.
-
-Set MAX_LEN to 512
-
-### **Positional Representation** 
-As denoted at the paper, positional rerpesentations are used at bidirectional LSTM. I implemented positional representation before feeding original sequences to BERT. Positional rerpesentation can be obtained and be injected to model with original token sequences using Dataloader. Furthermore, it is quite dull that change output of BERT to words and then get positional representation. Thus, get positoinal representation when tokenizing sequences.
-
-<!-- Also, I added negative number at token after first [SEP]. The paper removed all tokens after first [SEP] at the output of BERT(contextual representation) this can be done by input_ids which included segement id. However, for easy application I just added negative length of sequence at token following first [SEP] of positional representation.  -->
-
-Set length of positional representations as sequence legnth without pad
-"""
-
 from transformers import BertTokenizer, GPT2Tokenizer
 
 print('Loading BERT tokenizer...')
 bert_tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
-gpt_tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
+# gpt_tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
 
-gpt_tokenizer.pad_token = gpt_tokenizer.eos_token
+# gpt_tokenizer.pad_token = gpt_tokenizer.eos_token
 
 object_type_list = ['OBJORGANIZATION',
                     'OBJNATIONALITY',
@@ -340,7 +315,7 @@ def get_bilstm_positional_ids(max_length, word_sequences):
 
 def get_bert_token_probs(bert_input_ids, words, word_probs, max_len):
     tokens = bert_tokenizer.convert_ids_to_tokens(bert_input_ids)
-    output = [torch.tensor([0] * max_len).to(device)] * len(tokens)
+    output = [torch.zeros(max_len).to('cpu')] * len(tokens)
     i = 0
     k = i
     while i < len(words):
@@ -370,12 +345,12 @@ def get_bert_token_probs(bert_input_ids, words, word_probs, max_len):
             word = ''.join(tmp_tokens)
             if words[i] == word:
                 for w in range(k, j + 1):
-                    output[w] = word_probs[i]  # due to [cls] first token in bert words vs first token in gpt words
+                    output[w] = word_probs[i].to('cpu') # due to [cls] first token in bert words vs first token in gpt words
             else:
                 try:
                     idx = type_list.index(word)
                     for w in range(k, j + 1):
-                        output[w] = word_probs[i]
+                        output[w] = word_probs[i].to('cpu')
                 except:
                     cur_word = words[i]
                     # print('cur word', cur_word)
@@ -386,7 +361,7 @@ def get_bert_token_probs(bert_input_ids, words, word_probs, max_len):
                     # print('cur s ', tokens[k:k+token_len])
                     if tokens[k:k + token_len] == bert_tokens:
                         for w in range(k, k + token_len):
-                            output[w] = word_probs[i]
+                            output[w] = word_probs[i].to('cpu')
                         j = k + token_len - 1
                     else:
                         print('Error at get bert token probabilities! : No matching word in bert tokens. idx ', i,
@@ -396,11 +371,11 @@ def get_bert_token_probs(bert_input_ids, words, word_probs, max_len):
             i += 1
 
         else:
-            output[k] = word_probs[i]
+            output[k] = word_probs[i].to('cpu')
             k += 1
             i += 1
 
-    return torch.stack(output)
+    return torch.stack(output).to('cpu')
 
 
 def get_bert_tokens(tokenizer, sentences, labels, max_len):
@@ -449,7 +424,7 @@ def get_bert_tokens(tokenizer, sentences, labels, max_len):
 """### **Positional Encoding with GPT2 output** """
 
 
-def get_one_hot_encoding(max_len, dim):
+def get_one_hot_encoding(max_len, dim=768):
     pe = torch.zeros(max_len, dim)
 
     for i in range(max_len):
@@ -458,7 +433,7 @@ def get_one_hot_encoding(max_len, dim):
     return pe
 
 
-def get_linear_embedding(max_len, dim):
+def get_linear_embedding(max_len, dim=768):
     isOdd = False
 
     if dim % 2 != 0:
@@ -512,56 +487,48 @@ label_list = ['org:member_of', 'per:schools_attended', 'per:charges', 'org:city_
 
 train_df = pd.read_csv('./dataset/train_masked.tsv', delimiter='\t', header=None,
                        names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
-dev_df = pd.read_csv('./dataset/dev_masked.tsv', delimiter='\t', header=None,
-                     names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
-test_df = pd.read_csv('./dataset/test_masked.tsv', delimiter='\t', header=None,
-                      names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
+# dev_df = pd.read_csv('./dataset/dev_masked.tsv', delimiter='\t', header=None,
+#                      names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
+# test_df = pd.read_csv('./dataset/test_masked.tsv', delimiter='\t', header=None,
+#                       names=['sentence_id', 'label', 'label_notes', 'sentence', 'masked_sentence'])
 
 train_sentences = np.array(train_df.sentence.values)
 train_masked_sentences = np.array(train_df.masked_sentence.values)
 train_labels = np.array([label_list.index(label) for label in train_df.label.values])
 
-dev_sentences = np.array(dev_df.sentence.values)
-dev_masked_sentences = np.array(dev_df.masked_sentence.values)
-dev_labels = np.array([label_list.index(label) for label in dev_df.label.values])
-
-test_sentences = np.array(test_df.sentence.values)
-test_masked_sentences = np.array(test_df.masked_sentence.values)
-test_labels = np.array([label_list.index(label) for label in test_df.label.values])
+# dev_sentences = np.array(dev_df.sentence.values)
+# dev_masked_sentences = np.array(dev_df.masked_sentence.values)
+# dev_labels = np.array([label_list.index(label) for label in dev_df.label.values])
 """### **Make torch dataloader**
 
 Minimum of train sequence length should not be zero it means that there is any sequeence which size is over MAX_LEN
 """
+
+print('open bert data...')
+
+tr_input_ids = torch.load('./dataset/tr_input_ids.pt').to('cpu')
+tr_attribute_masks = torch.load('./dataset/tr_attribute_masks.pt').to('cpu')
+tr_positional_ids = torch.load('./dataset/tr_positional_ids.pt').to('cpu')
+tr_seq_length = torch.load('./dataset/tr_seq_length.pt').to('cpu')
+tr_gt_labels = torch.load('./dataset/tr_gt_labels.pt').to('cpu')
+
+print(tr_input_ids.device)
+#
+# dv_input_ids = torch.load('./dataset/dv_input_ids.pt').to('cpu')
+# dv_attribute_masks = torch.load('./dataset/dv_attribute_masks.pt').to('cpu')
+# dv_positional_ids = torch.load('./dataset/dv_positional_ids.pt').to('cpu')
+# dv_seq_length = torch.load('./dataset/dv_seq_length.pt').to('cpu')
+# dv_gt_labels = torch.load('./dataset/dv_gt_labels.pt').to('cpu')
+
+
 
 batch_size = 3
 max_len = 450
 
 import pickle
 
-with open('test_words.txt', 'rb') as f1, open('test_probs.txt', 'rb') as f2:
-    test_words = pickle.load(f1)
-    test_probs = pickle.load(f2)
+print('open gpt words and probs...')
 
-with open('dev_words.txt', 'rb') as f1, open('dev_probs.txt', 'rb') as f2:
-    dev_words = pickle.load(f1)
-    dev_probs = pickle.load(f2)
-
-with open('train_words.txt', 'rb') as f1, open('train_probs.txt', 'rb') as f2:
-    train_words = pickle.load(f1)
-    train_probs = pickle.load(f2)
-
-
-def get_prob_embeds(bert_input_ids, words, probs, max_len):
-    prob_embds = []
-    for i in range(len(words)):
-        bert_token_probs = get_bert_token_probs(bert_input_ids[i], words[i], probs[i], max_len)
-        embds = get_linear_embedding(max_len)
-
-        prob_embds.append(embds)
-
-    torch.tensor(prob_embds)
-
-    return prob_embds
 
 
 import torch
@@ -569,29 +536,29 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, Sequentia
 
 batch_size = 3
 max_len = 450
+dim = 768
 
-tr_input_ids, tr_attribute_masks, tr_positional_ids, tr_seq_length, tr_gt_labels = get_bert_tokens(bert_tokenizer,
-                                                                                                   train_masked_sentences,
-                                                                                                   train_labels,
-                                                                                                   max_len)
+print('load position embedding...')
+train_prob_embeds = torch.zeros((len(tr_input_ids), max_len, dim))
+# dev_prob_embeds = torch.zeros((len(tr_input_ids), max_len, dim))
 
-train_prob_embeds = get_prob_embeds(tr_input_ids, train_words, train_probs)
-# print(torch.min(tr_seq_length)) # should not be zero it means that there is any sequeence which size is over MAX_LEN
+len(tr_input_ids)
 
-train_dataset = TensorDataset(tr_input_ids, tr_attribute_masks, tr_positional_ids, tr_seq_length, tr_gt_labels,
+train_dataset = TensorDataset(tr_input_ids, tr_attribute_masks, tr_positional_ids, tr_seq_length,
+                              tr_gt_labels,
                               train_prob_embeds)
 train_sampler = RandomSampler(train_dataset)
 train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
+#
 
-dv_input_ids, dv_attribute_masks, dv_positional_ids, dv_seq_length, dv_gt_labels = get_bert_tokens(bert_tokenizer,
-                                                                                                   dev_masked_sentences,
-                                                                                                   dev_labels, max_len)
-
-dev_prob_embeds = get_prob_embeds(dv_input_ids, dev_words, dev_probs)
-dev_dataset = TensorDataset(dv_input_ids, dv_attribute_masks, dv_positional_ids, dv_seq_length, dv_gt_labels,
-                            dev_prob_embeds)
-dev_sampler = SequentialSampler(dev_dataset)
-dev_dataloader = DataLoader(dev_dataset, sampler=dev_sampler, batch_size=batch_size)
+# len(dv_input_ids)
+# dev_prob_embeds = torch.zeros((len(dv_input_ids), max_len, dim))
+#
+# dev_dataset = TensorDataset(dv_input_ids, dv_attribute_masks, dv_positional_ids, dv_seq_length,
+#                             dv_gt_labels,
+#                             dev_prob_embeds)
+# dev_sampler = SequentialSampler(dev_dataset)
+# dev_dataloader = DataLoader(dev_dataset, sampler=dev_sampler, batch_size=batch_size)
 
 # B batch size, deafult = 32
 # P length of sequence, default = 450
@@ -698,22 +665,6 @@ max_len = 450
 model = BERT_BiLSTM(bert_tokenizer, max_length=max_len)
 model.to(device)
 
-"""## **3. Optimizer & Learning Rate Scheduler**
-
-For the purposes of fine-tuning, the authors recommend choosing from the following values (from Appendix A.3 of the **BERT paper**):
-
-* Batch size: 8, 16, 32, 64, 128
-* Learning rate (Adam): 3e-4, 1e-4, 5e-5, 3e-5
-* Number of epochs: 2, 3, 4
-
-For papaer,
-
-* Learning rate : 5e-5
-  * which is not workiing properly
-  
-Set BATCH_SIZE = 3, LEARNING_RATE=1e-5, EPOCHS=3
-"""
-
 batch_size = 3  # (set when creating our DataLoaders)
 learning_rate = 1e-5
 epochs = 3
@@ -729,24 +680,6 @@ total_steps = len(train_dataloader) * epochs
 scheduler = get_linear_schedule_with_warmup(optimizer,
                                             num_warmup_steps=0,  # Default value in run_glue.py
                                             num_training_steps=total_steps)
-
-"""## **4. Training Loop**
-
-**Training**
-* Unpack our data inputs and labels
-* Load data onto the GPU for accerlation
-* Clear out the gradients calculated the previous pass
-* Forward pass
-* Backward pass
-* Tell the network to update parameteres with optimizer.step()
-* Track variables for monitoring progress
-
-**Evaluation**
-* Unpack our data inputs and labeld
-* Load data onto the GPU for acceleration
-* Forward pass
-* Compute loss on our validation data and track variables for monitoring progress
-"""
 
 import numpy as np
 import torch.nn.functional as F
@@ -774,21 +707,102 @@ def format_time(elapsed):
     return str(datetime.timedelta(seconds=elapsed_rounded))
 
 
+from collections import Counter
+
+NO_RELATION = "no_relation"
+
+
+def score(key, prediction, verbose=False):
+    correct_by_relation = Counter()
+    guessed_by_relation = Counter()
+    gold_by_relation = Counter()
+
+    # Loop over the data to compute a score
+    for row in range(len(key)):
+        gold = key[row]
+        guess = prediction[row]
+
+        if gold == NO_RELATION and guess == NO_RELATION:
+            pass
+        elif gold == NO_RELATION and guess != NO_RELATION:
+            guessed_by_relation[guess] += 1
+        elif gold != NO_RELATION and guess == NO_RELATION:
+            gold_by_relation[gold] += 1
+        elif gold != NO_RELATION and guess != NO_RELATION:
+            guessed_by_relation[guess] += 1
+            gold_by_relation[gold] += 1
+            if gold == guess:
+                correct_by_relation[guess] += 1
+
+    # Print verbose information
+    if verbose:
+        print("Per-relation statistics:")
+        relations = gold_by_relation.keys()
+        longest_relation = 0
+        for relation in sorted(relations):
+            longest_relation = max(len(relation), longest_relation)
+        for relation in sorted(relations):
+            # (compute the score)
+            correct = correct_by_relation[relation]
+            guessed = guessed_by_relation[relation]
+            gold = gold_by_relation[relation]
+            prec = 1.0
+            if guessed > 0:
+                prec = float(correct) / float(guessed)
+            recall = 0.0
+            if gold > 0:
+                recall = float(correct) / float(gold)
+            f1 = 0.0
+            if prec + recall > 0:
+                f1 = 2.0 * prec * recall / (prec + recall)
+            # (print the score)
+            sys.stdout.write(("{:<" + str(longest_relation) + "}").format(relation))
+            sys.stdout.write("  P: ")
+            if prec < 0.1: sys.stdout.write(' ')
+            if prec < 1.0: sys.stdout.write(' ')
+            sys.stdout.write("{:.2%}".format(prec))
+            sys.stdout.write("  R: ")
+            if recall < 0.1: sys.stdout.write(' ')
+            if recall < 1.0: sys.stdout.write(' ')
+            sys.stdout.write("{:.2%}".format(recall))
+            sys.stdout.write("  F1: ")
+            if f1 < 0.1: sys.stdout.write(' ')
+            if f1 < 1.0: sys.stdout.write(' ')
+            sys.stdout.write("{:.2%}".format(f1))
+            sys.stdout.write("  #: %d" % gold)
+            sys.stdout.write("\n")
+        print("")
+
+    # Print the aggregate score
+    if verbose:
+        print("Final Score:")
+    prec_micro = 1.0
+    if sum(guessed_by_relation.values()) > 0:
+        prec_micro = float(sum(correct_by_relation.values())) / float(sum(guessed_by_relation.values()))
+    recall_micro = 0.0
+    if sum(gold_by_relation.values()) > 0:
+        recall_micro = float(sum(correct_by_relation.values())) / float(sum(gold_by_relation.values()))
+    f1_micro = 0.0
+    if prec_micro + recall_micro > 0.0:
+        f1_micro = 2.0 * prec_micro * recall_micro / (prec_micro + recall_micro)
+    print("Precision (micro): {:.3%}".format(prec_micro))
+    print("   Recall (micro): {:.3%}".format(recall_micro))
+    print("       F1 (micro): {:.3%}".format(f1_micro))
+    return prec_micro, recall_micro, f1_micro
+
 import random
 import numpy as np
 import torch.nn.functional as F
 
 seed_val = 42
+dim = 768
+max_len = 450
 
 random.seed(seed_val)
 np.random.seed(seed_val)
 torch.manual_seed(seed_val)
 torch.cuda.manual_seed_all(seed_val)
 
-decoder = GPTDecoder('gpt2', max_len)
-decoder.to(device)
-
-decoder.eval()
 training_stats = []
 
 total_t0 = time.time()
@@ -814,6 +828,7 @@ for epoch_i in range(epochs):
     # Reset the total loss for this epoch.
     total_train_loss = []
     total_train_accuracy = []
+    predictions_, true_labels_ = [], []
 
     model.train()
 
@@ -846,7 +861,7 @@ for epoch_i in range(epochs):
         b_input_positional_ids = smart_sort(b_input_positional_ids, indicies)
         b_labels = smart_sort(b_labels, indicies)
 
-        prob_embeds = smart_sort(b_prob_embeds, indicies)
+        b_prob_embeds = smart_sort(b_prob_embeds, indicies)
 
         logits, loss = model(
             b_input_ids,
@@ -855,14 +870,14 @@ for epoch_i in range(epochs):
             seq_lengths=b_input_seq_lengths,
             sequence_length=MAX_LEN,
             labels=b_labels,
-            position_embeds=prob_embeds
+            position_embeds=b_prob_embeds
         )
 
         logits = F.softmax(logits, dim=1)
 
         # Accumulate the training loss over all of the batches so that we can
         # calculate the average loss at the end. `loss` is a Tensor containing a
-        # single value; the `.item()` function just returns the Python value 
+        # single value; the `.item()` function just returns the Python value
         # from the tensor.
         total_train_loss.append(loss.item())
 
@@ -884,9 +899,13 @@ for epoch_i in range(epochs):
         logits_ = logits.detach().cpu().numpy()
         label_ids = b_labels.to('cpu').numpy()
         total_train_accuracy.append(flat_accuracy(logits_, label_ids))
+        b_prob_embeds.to('cpu')
+
+        predictions_.append(np.argmax(logits_, axis=1))
+        true_labels_.append(label_ids)
 
         # Progress update every 32 batches.
-        if step % 32 == 0 and not step == 0:
+        if step % 16 == 0 and not step == 0:
             # Calculate elapsed time in minutes.
             elapsed = format_time(time.time() - t0)
 
@@ -894,6 +913,16 @@ for epoch_i in range(epochs):
             print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:},     Loss: {:}.      Accuracy: {:}'.format(step, len(
                 train_dataloader), elapsed, sum(total_train_loss[:step]) / step, sum(
                 total_train_accuracy[:step]) / step))
+            y_pred, y_true = [], []
+            row = len(predictions_)
+            for i in range(row):
+                col = len(predictions_[i])
+                for j in range(col):
+                    tmp1 = predictions_[i][j]
+                    tmp2 = true_labels_[i][j]
+                    y_pred.append(label_list[int(tmp1)])
+                    y_true.append(label_list[int(tmp2)])
+            score(y_true, y_pred)
 
         # Report the final accuracy for this validation run.
     avg_train_accuracy = sum(total_train_accuracy) / len(train_dataloader)
@@ -910,7 +939,7 @@ for epoch_i in range(epochs):
     print("  Training epcoh took: {:}".format(training_time))
 
     SAVE_EPOCH = epochs
-    SAVE_PATH = "model_max_len_450_whcho_" + str(epoch_i) + ".pt"
+    SAVE_PATH = "gpt_bert_bilstm_" + str(epoch_i) + ".pt"
     SAVE_LOSS = loss
 
     torch.save({
@@ -925,211 +954,223 @@ for epoch_i in range(epochs):
     # After the completion of each training epoch, measure our performance on
     # our validation set.
 
-    print("")
-    print("Running Validation...")
-
-    t0 = time.time()
-
-    # Put the model in evaluation mode--the dropout layers behave differently
-    # during evaluation.
-    model.eval()
-
-    # Tracking variables 
-    total_eval_accuracy = 0
-    total_eval_loss = 0
-    nb_eval_steps = 0
-    predictions_, true_labels_ = [], []
-
-    # Evaluate data for one epoch
-    for batch in dev_dataloader:
-
-        # Unpack this training batch from our dataloader. 
-        #
-        # As we unpack the batch, we'll also copy each tensor to the GPU using 
-        # the `to` method.
-        #
-        # `batch` contains three pytorch tensors:
-        #   [0]: input ids 
-        #   [1]: attention masks
-        #   [2]: labels 
-        b_input_ids = batch[0].to(device)
-        b_input_mask = batch[1].to(device)
-        b_input_positional_ids = batch[2].to(device)
-        b_input_seq_lengths = batch[3].to(device)
-        b_labels = batch[4].to(device)
-        b_prob_embeds = batch[5].to(device)
-
-        model.zero_grad()
-
-        cur_len = len(b_input_ids)
-
-        b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
-
-
-        def smart_sort(x, per):
-            z = torch.empty_like(x)
-            for i in range(len(per)):
-                z[per[i]] = x[i]
-            return z
-
-
-        b_input_ids = smart_sort(b_input_ids, indicies)
-        b_input_mask = smart_sort(b_input_mask, indicies)
-        b_input_positional_ids = smart_sort(b_input_positional_ids, indicies)
-        b_labels = smart_sort(b_labels, indicies)
-
-        prob_embeds = smart_sort(b_prob_embeds, indicies)
-
-        logits, loss = model(
-            b_input_ids,
-            attention_mask=b_input_mask,
-            positional_ids=b_input_positional_ids,
-            seq_lengths=b_input_seq_lengths,
-            sequence_length=MAX_LEN,
-            labels=b_labels,
-            position_embeds=prob_embeds
-        )
-
-        logits = F.softmax(logits, dim=1)
-
-        # Accumulate the validation loss.
-        total_eval_loss += loss.item()
-
-        # Move logits and labels to CPU
-        logits = logits.detach().cpu().numpy()
-        label_ids = b_labels.to('cpu').numpy()
-
-        predictions_.append(np.argmax(logits, axis=1))
-        true_labels_.append(label_ids)
-
-        # Calculate the accuracy for this batch of test sentences, and
-        # accumulate it over all batches.
-        total_eval_accuracy += flat_accuracy(logits, label_ids)
-
-    if epoch_i < 3:
-        y_pred, y_true = [], []
-        row = len(predictions_)
-        for i in range(row):
-            col = len(predictions_[i])
-            for j in range(col):
-                tmp1 = predictions_[i][j]
-                tmp2 = true_labels_[i][j]
-                y_pred.append(label_list[int(tmp1)])
-                y_true.append(label_list[int(tmp2)])
-
-        df_result = pd.DataFrame(y_pred)
-        df_result.to_csv('./dataset/dev_pred.csv', header=None, index=False)
-
-        df_result = pd.DataFrame(y_true)
-        df_result.to_csv('./dataset/dev_gt.csv', header=None, index=False)
-
-    # Report the final accuracy for this validation run.
-    avg_dev_accuracy = total_eval_accuracy / len(dev_dataloader)
-    print("  Accuracy: {0:.2f}".format(avg_dev_accuracy))
-
-    # Calculate the average loss over all of the batches.
-    avg_dev_loss = total_eval_loss / len(dev_dataloader)
-
-    # Measure how long the validation run took.
-    dev_time = format_time(time.time() - t0)
-
-    print("  Validation Loss: {0:.2f}".format(avg_dev_loss))
-    print("  Validation took: {:}".format(dev_time))
+    # print("")
+    # print("Running Validation...")
+    #
+    # t0 = time.time()
+    #
+    # # Put the model in evaluation mode--the dropout layers behave differently
+    # # during evaluation.
+    # model.eval()
+    #
+    # # Tracking variables
+    # total_eval_accuracy = 0
+    # total_eval_loss = 0
+    # nb_eval_steps = 0
+    # predictions_, true_labels_ = [], []
+    #
+    # # Evaluate data for one epoch
+    # for batch in dev_dataloader:
+    #
+    #     # Unpack this training batch from our dataloader.
+    #     #
+    #     # As we unpack the batch, we'll also copy each tensor to the GPU using
+    #     # the `to` method.
+    #     #
+    #     # `batch` contains three pytorch tensors:
+    #     #   [0]: input ids
+    #     #   [1]: attention masks
+    #     #   [2]: labels
+    #     b_input_ids = batch[0].to(device)
+    #     b_input_mask = batch[1].to(device)
+    #     b_input_positional_ids = batch[2].to(device)
+    #     b_input_seq_lengths = batch[3].to(device)
+    #     b_labels = batch[4].to(device)
+    #     b_prob_embeds = batch[5].to(device)
+    #
+    #     model.zero_grad()
+    #
+    #     cur_len = len(b_input_ids)
+    #
+    #     b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
+    #
+    #
+    #     def smart_sort(x, per):
+    #         z = torch.empty_like(x)
+    #         for i in range(len(per)):
+    #             z[per[i]] = x[i]
+    #         return z
+    #
+    #
+    #     b_input_ids = smart_sort(b_input_ids, indicies)
+    #     b_input_mask = smart_sort(b_input_mask, indicies)
+    #     b_input_positional_ids = smart_sort(b_input_positional_ids, indicies)
+    #     b_labels = smart_sort(b_labels, indicies)
+    #
+    #     b_prob_embeds = smart_sort(b_prob_embeds, indicies)
+    #
+    #     logits, loss = model(
+    #         b_input_ids,
+    #         attention_mask=b_input_mask,
+    #         positional_ids=b_input_positional_ids,
+    #         seq_lengths=b_input_seq_lengths,
+    #         sequence_length=MAX_LEN,
+    #         labels=b_labels,
+    #         position_embeds=b_prob_embeds
+    #     )
+    #
+    #     logits = F.softmax(logits, dim=1)
+    #
+    #     # Accumulate the validation loss.
+    #     total_eval_loss += loss.item()
+    #
+    #     # Move logits and labels to CPU
+    #     logits = logits.detach().cpu().numpy()
+    #     label_ids = b_labels.to('cpu').numpy()
+    #     b_prob_embeds.to('cpu')
+    #
+    #     predictions_.append(np.argmax(logits, axis=1))
+    #     true_labels_.append(label_ids)
+    #
+    #     # Calculate the accuracy for this batch of test sentences, and
+    #     # accumulate it over all batches.
+    #     total_eval_accuracy += flat_accuracy(logits, label_ids)
+    #
+    # if epoch_i < 3:
+    #     y_pred, y_true = [], []
+    #     row = len(predictions_)
+    #     for i in range(row):
+    #         col = len(predictions_[i])
+    #         for j in range(col):
+    #             tmp1 = predictions_[i][j]
+    #             tmp2 = true_labels_[i][j]
+    #             y_pred.append(label_list[int(tmp1)])
+    #             y_true.append(label_list[int(tmp2)])
+    #     score(y_true, y_pred)
+    #     df_result = pd.DataFrame(y_pred)
+    #     df_result.to_csv('./dataset/dev_pred.csv', header=None, index=False)
+    #
+    #     df_result = pd.DataFrame(y_true)
+    #     df_result.to_csv('./dataset/dev_gt.csv', header=None, index=False)
+    #
+    # # Report the final accuracy for this validation run.
+    # avg_dev_accuracy = total_eval_accuracy / len(dev_dataloader)
+    # print("  Accuracy: {0:.2f}".format(avg_dev_accuracy))
+    #
+    # # Calculate the average loss over all of the batches.
+    # avg_dev_loss = total_eval_loss / len(dev_dataloader)
+    #
+    # # Measure how long the validation run took.
+    # dev_time = format_time(time.time() - t0)
+    #
+    # print("  Validation Loss: {0:.2f}".format(avg_dev_loss))
+    # print("  Validation took: {:}".format(dev_time))
 
     # Record all statistics from this epoch.
-    training_stats.append(
-        {
-            'epoch': epoch_i + 1,
-            'Training Loss': avg_train_loss,
-            'Valid. Loss': avg_dev_loss,
-            'Valid. Accur.': avg_dev_accuracy,
-            'Training Time': training_time,
-            'Validation Time': dev_time
-        }
-    )
+    # training_stats.append(
+    #     {
+    #         'epoch': epoch_i + 1,
+    #         'Training Loss': avg_train_loss,
+    #         'Valid. Loss': avg_dev_loss,
+    #         'Valid. Accur.': avg_dev_accuracy,
+    #         'Training Time': training_time,
+    #         'Validation Time': dev_time
+    #     }
+    # )
 
 print("")
 print("Training complete!")
 
-print("Total training took {:} (h:mm:ss)".format(format_time(time.time() - total_t0)))
+# print("Total training took {:} (h:mm:ss)".format(format_time(time.time() - total_t0)))
 
 """## **5. Prediction**
 
 Predict test data
 """
 
-max_len = 450
-batch_size = 3
-
-test_input_ids, test_attribute_masks, test_positional_ids, test_seq_length, test_gt_labels = get_bert_tokens(
-    bert_tokenizer,
-    test_masked_sentences, test_labels,
-    max_len)
-
-test_prob_embeds = get_prob_embeds(test_input_ids, test_words, test_probs, max_len)
-test_dataset = TensorDataset(test_input_ids, test_attribute_masks, test_positional_ids, test_seq_length, test_gt_labels,
-                             test_prob_embeds)
-test_sampler = SequentialSampler(test_dataset)
-test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=batch_size)
+#
+# test_sentences = np.array(test_df.sentence.values)
+# test_masked_sentences = np.array(test_df.masked_sentence.values)
+# test_labels = np.array([label_list.index(label) for label in test_df.label.values])
+#
+# test_input_ids = torch.load('./dataset/test_input_ids.pt').to('cpu')
+# test_attribute_masks = torch.load('./dataset/test_attribute_masks.pt').to('cpu')
+# test_positional_ids = torch.load('./dataset/test_positional_ids.pt').to('cpu')
+# test_seq_length = torch.load('./dataset/test_seq_length.pt').to('cpu')
+# test_gt_labels = torch.load('./dataset/test_gt_labels.pt').to('cpu')
+#
+# max_len = 450
+# batch_size = 3
+# dim = 768
+#
+# test_prob_embeds = torch.zeros((len(test_input_ids), max_len, dim)).to('cpu')
+# for i in range(len(test_input_ids)):
+#     test_prob_embeds[i, :] = torch.load(.to('cpu')
+#
+# test_dataset = TensorDataset(test_input_ids, test_attribute_masks, test_positional_ids, test_seq_length, test_gt_labels,
+#                              test_prob_embeds)
+# test_sampler = SequentialSampler(test_dataset)
+# test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=batch_size)
 
 # Put model in evaluation mode
-model.eval()
-# Tracking variables 
-predictions_, true_labels_ = [], []
-
-# Predict 
-for batch in test_dataloader:
-    # Add batch to GPU
-    batch = tuple(t.to(device) for t in batch)
-
-    # Unpack the inputs from our dataloader
-    b_input_ids, b_input_mask, b_input_positional_ids, b_input_seq_lengths, b_labels, b_prob_embeds = batch
-
-    model.zero_grad()
-
-    cur_len = len(b_input_ids)
-
-    b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
-
-    b_input_ids = smart_sort(b_input_ids, indicies)
-    b_input_mask = smart_sort(b_input_mask, indicies)
-    b_input_positional_ids = smart_sort(b_input_positional_ids, indicies)
-    b_labels = smart_sort(b_labels, indicies)
-    prob_embeds = smart_sort(b_prob_embeds, indicies)
-
-    # Telling the model not to compute or store gradients, saving memory and
-    # speeding up prediction
-    with torch.no_grad():
-        # Forward pass, calculate logit predictions
-        logits, loss = model(b_input_ids,
-                             attention_mask=b_input_mask,
-                             positional_ids=b_input_positional_ids,
-                             seq_lengths=b_input_seq_lengths,
-                             sequence_length=MAX_LEN,
-                             labels=b_labels,
-                             position_embeds=prob_embeds
-                             )
-        logits = F.softmax(logits, dim=1)
-    # Move logits and labels to CPU
-
-    logits = logits.detach().cpu().numpy()
-    label_ids = b_labels.to('cpu').numpy()
-
-    predictions_.append(np.argmax(logits, axis=1))
-    true_labels_.append(label_ids)
-
-y_pred, y_true = [], []
-row = len(predictions_)
-for i in range(row):
-    col = len(predictions_[i])
-    for j in range(col):
-        tmp1 = predictions_[i][j]
-        tmp2 = true_labels_[i][j]
-        y_pred.append(label_list[int(tmp1)])
-        y_true.append(label_list[int(tmp2)])
-
-df_result = pd.DataFrame(y_pred)
-df_result.to_csv('./dataset/test_pred.csv', header=None, index=False)
-
-df_result = pd.DataFrame(y_true)
-df_result.to_csv('./dataset/test_gt.csv', header=None, index=False)
+# model.eval()
+# # Tracking variables
+# predictions_, true_labels_ = [], []
+#
+# # Predict
+# for batch in test_dataloader:
+#     # Add batch to GPU
+#     batch = tuple(t.to(device) for t in batch)
+#
+#     # Unpack the inputs from our dataloader
+#     b_input_ids, b_input_mask, b_input_positional_ids, b_input_seq_lengths, b_labels, b_prob_embeds = batch
+#
+#     model.zero_grad()
+#
+#     cur_len = len(b_input_ids)
+#
+#     b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
+#
+#     b_input_ids = smart_sort(b_input_ids, indicies)
+#     b_input_mask = smart_sort(b_input_mask, indicies)
+#     b_input_positional_ids = smart_sort(b_input_positional_ids, indicies)
+#     b_labels = smart_sort(b_labels, indicies)
+#     b_prob_embeds = smart_sort(b_prob_embeds, indicies)
+#
+#     # Telling the model not to compute or store gradients, saving memory and
+#     # speeding up prediction
+#     with torch.no_grad():
+#         # Forward pass, calculate logit predictions
+#         logits, loss = model(b_input_ids,
+#                              attention_mask=b_input_mask,
+#                              positional_ids=b_input_positional_ids,
+#                              seq_lengths=b_input_seq_lengths,
+#                              sequence_length=MAX_LEN,
+#                              labels=b_labels,
+#                              position_embeds=b_prob_embeds
+#                              )
+#         logits = F.softmax(logits, dim=1)
+#     # Move logits and labels to CPU
+#
+#     logits = logits.detach().cpu().numpy()
+#     label_ids = b_labels.to('cpu').numpy()
+#     b_prob_embeds.to('cpu')
+#
+#     predictions_.append(np.argmax(logits, axis=1))
+#     true_labels_.append(label_ids)
+#
+# y_pred, y_true = [], []
+# row = len(predictions_)
+# for i in range(row):
+#     col = len(predictions_[i])
+#     for j in range(col):
+#         tmp1 = predictions_[i][j]
+#         tmp2 = true_labels_[i][j]
+#         y_pred.append(label_list[int(tmp1)])
+#         y_true.append(label_list[int(tmp2)])
+#
+# df_result = pd.DataFrame(y_pred)
+# df_result.to_csv('./dataset/test_pred.csv', header=None, index=False)
+#
+# df_result = pd.DataFrame(y_true)
+# df_result.to_csv('./dataset/test_gt.csv', header=None, index=False)
