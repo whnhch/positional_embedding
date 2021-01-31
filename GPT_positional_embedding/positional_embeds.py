@@ -392,12 +392,12 @@ tr_seq_length = torch.load('./dataset/tr_seq_length.pt').to('cpu')
 tr_gt_labels = torch.load('./dataset/tr_gt_labels.pt').to('cpu')
 
 print(tr_input_ids.device)
-
-dv_input_ids = torch.load('./dataset/dv_input_ids.pt').to('cpu')
-dv_attribute_masks = torch.load('./dataset/dv_attribute_masks.pt').to('cpu')
-dv_positional_ids = torch.load('./dataset/dv_positional_ids.pt').to('cpu')
-dv_seq_length = torch.load('./dataset/dv_seq_length.pt').to('cpu')
-dv_gt_labels = torch.load('./dataset/dv_gt_labels.pt').to('cpu')
+#
+# dv_input_ids = torch.load('./dataset/dv_input_ids.pt').to('cpu')
+# dv_attribute_masks = torch.load('./dataset/dv_attribute_masks.pt').to('cpu')
+# dv_positional_ids = torch.load('./dataset/dv_positional_ids.pt').to('cpu')
+# dv_seq_length = torch.load('./dataset/dv_seq_length.pt').to('cpu')
+# dv_gt_labels = torch.load('./dataset/dv_gt_labels.pt').to('cpu')
 
 batch_size = 3
 max_len = 450
@@ -413,9 +413,11 @@ dev_probs = None
 train_words = None
 train_probs = None
 
-with open('dev_words.txt', 'rb') as f1, open('dev_probs.txt', 'rb') as f2:
-    dev_words = pickle.load(f1)
-    dev_probs = pickle.load(f2)
+# with open('dev_words.txt', 'rb') as f1, open('dev_probs.txt', 'rb') as f2:
+#     dev_words = pickle.load(f1)
+#     dev_probs = pickle.load(f2)
+
+import torch
 
 with open('tr_words.txt', 'rb') as f1, open('tr_probs.txt', 'rb') as f2:
     train_words = pickle.load(f1)
@@ -479,11 +481,9 @@ def save_embeds(input_ids, words, probs, type='train', start_idx=0, max_len=450,
 
 
 try:
-    save_embeds(tr_input_ids, train_words, train_probs, type='train', start_idx=2368)
+    save_embeds(tr_input_ids, train_words, train_probs, type='train', start_idx=34144)
+    # save_embeds(dv_input_ids, dev_words, dev_probs, type='dev')
 except:
-    try:
-        save_embeds(dv_input_ids, dev_words, dev_probs, type='dev')
-    except:
         os.system('shutdown /r /t 1')
 
 os.system('shutdown /r /t 1')

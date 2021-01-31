@@ -63,31 +63,78 @@ type_list = object_type_list + subject_type_list
 bert_tokenizer.add_tokens(type_list, special_tokens=True)
 
 
-def get_linear_prob_embeds(probs, length, threshold, max_len, dim=768):
+def get_linear_prob_embeds(probs, length, mu, std, max_len, dim=768):
     embed = get_linear_embedding(max_len).to(device)
 
     width_ratio = 1 / (int(dim / 2))
     height_ratio = 2 / (max_len - 1)
 
-    unit_distance = width_ratio
-
+    # unit_distance = width_ratio
+    # 바로 다음만 영향을 줄 때
+    assigns = []
     for i in range(length - 1):
-        for j in range(i + 1, length):
-            width_ratio = 1 / (int(dim / 2))
-            height_ratio = 2 / (max_len - 1)
+        j = i + 1
+        #   assigns = []
+        #   for j in range(i+1, length):
+        difference = (height_ratio - (height_ratio * width_ratio * j))
 
-            difference = (height_ratio - (height_ratio * width_ratio * j))
-            cur_probs = probs[i][j]
+        cur_probs = probs[i][j]
+        cur_assign = difference * cur_probs
 
-            if cur_probs >= threshold:
-                embed[j, :int(dim / 2)] = embed[j, :int(dim / 2)] + difference * cur_probs
-                embed[j, int(dim / 2):] = embed[j, int(dim / 2):] - difference * cur_probs
+        assigns += cur_assign
+        assign_constant = sum(assigns)
 
-            else:
-                embed[j, :int(dim / 2)] = embed[j, :int(dim / 2)] - difference * (1 - cur_probs)
-                embed[j, int(dim / 2):] = embed[j, int(dim / 2):] + difference * (1 - cur_probs)
+        threshold = mu[i] + std[i]
+        if abs(cur_probs) <= threshold:
+            embed[j, :int(dim / 2)] += assign_constant
+            embed[j, int(dim / 2):] -= assign_constant
+
+        else:
+            embed[j, :int(dim / 2)] -= (1 - assign_constant)
+            embed[j, int(dim / 2):] += (1 - assign_constant)
 
     return embed
+
+
+def get_one_hot_prob_embeds(probs, length, mu, std, max_len, device, dim=768):
+    embed = get_one_hot_encoding(max_len).to(device)
+
+    assigns = []
+    for i in range(length - 1):
+        # assigns = []
+        # for j in range(i + 1, length):
+
+        difference = 1
+
+        cur_probs = probs[i][j]
+        cur_assign = difference * cur_probs
+
+        assigns += cur_assign
+        assign_constant = sum(assigns)
+
+        threshold = mu[i] + std[i]
+        if abs(cur_probs) <= threshold:
+            embed[j, :int(dim / 2)] += assign_constant
+            embed[j, int(dim / 2):] -= assign_constant
+
+        else:
+            embed[j, :int(dim / 2)] -= (1 - assign_constant)
+            embed[j, int(dim / 2):] += (1 - assign_constant)
+
+    return embed
+
+
+def get_standardization(probs):
+    mu = probs.mean(dim=0)
+    std = probs.std(dim=0)
+
+    return (probs - mu) / std, mu, std
+
+
+def get_embeds(probs, length, std, type='linear'):
+    if type == 'linear':
+        return get_linear_prob_embeds(probs, length, mu, std)
+
 
 """### **Positional Encoding with GPT2 output** """
 
@@ -111,7 +158,6 @@ def get_linear_embedding(max_len, dim=768):
 
     width_ratio = 1 / (int(dim / 2))
     height_ratio = 2 / (max_len - 1)
-
 
     for i in range(dim):
         pe[0, i] = 1 - width_ratio * i
@@ -161,12 +207,6 @@ Minimum of train sequence length should not be zero it means that there is any s
 
 print('open bert data...')
 #
-dv_input_ids = torch.load('./dataset/dv_input_ids.pt').to('cpu')
-dv_attribute_masks = torch.load('./dataset/dv_attribute_masks.pt').to('cpu')
-dv_positional_ids = torch.load('./dataset/dv_positional_ids.pt').to('cpu')
-dv_seq_length = torch.load('./dataset/dv_seq_length.pt').to('cpu')
-dv_gt_labels = torch.load('./dataset/dv_gt_labels.pt').to('cpu')
-
 batch_size = 3
 max_len = 450
 
@@ -178,12 +218,6 @@ max_len = 450
 dim = 768
 
 print('make train dataset...')
-len(dv_input_ids)
-dev_prob_embeds = torch.zeros((len(dv_input_ids), max_len, dim))
-
-dev_dataset = TensorDataset(dv_input_ids, dv_attribute_masks, dv_positional_ids, dv_seq_length, dv_gt_labels)
-dev_sampler = SequentialSampler(dev_dataset)
-dev_dataloader = DataLoader(dev_dataset, sampler=dev_sampler, batch_size=batch_size)
 
 # B batch size, deafult = 32
 # P length of sequence, default = 450
@@ -367,6 +401,7 @@ test_gt_labels = torch.load('./dataset/test_gt_labels.pt').to('cpu')
 
 import torch
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+import numpy as np
 
 test_dataset = TensorDataset(test_input_ids, test_attribute_masks, test_positional_ids, test_seq_length, test_gt_labels)
 test_sampler = SequentialSampler(test_dataset)
@@ -396,9 +431,15 @@ for step, batch in enumerate(test_dataloader):
     model.zero_grad()
 
     cur_len = len(b_input_ids)
-    b_prob_embeds = torch.load('C:/Users/user/ai_intern/cpu/test_embeds/prob_embeds_' + str(step) + '.pt')
+    b_prob_embeds = torch.zeros((cur_len, max_len, dim))
+    for b in range(cur_len):
+        filename = 'C:/Users/user/ai_intern/cpu/test_embeds/prob_embeds_' + str(step * batch_size + b) + '.pt.npy'
+        probs = torch.stack(np.load(filename, allow_pickle=True).tolist()[0])
+        # 전체?
+        probs, mu, std = get_standardization(probs)
+        b_prob_embeds[b] = get_embeds(probs, b_input_seq_lengths[b], std, 'linear')
 
-    b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
+        b_input_seq_lengths, indicies = torch.sort(b_input_seq_lengths, dim=0, descending=True)
 
     b_input_ids = smart_sort(b_input_ids, indicies)
     b_input_mask = smart_sort(b_input_mask, indicies)
@@ -414,7 +455,7 @@ for step, batch in enumerate(test_dataloader):
                              attention_mask=b_input_mask,
                              positional_ids=b_input_positional_ids,
                              seq_lengths=b_input_seq_lengths,
-                             sequence_length=MAX_LEN,
+                             sequence_length=max_len,
                              labels=b_labels,
                              position_embeds=b_prob_embeds
                              )
